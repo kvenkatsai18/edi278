@@ -181,27 +181,27 @@ def parse_edi278(raw):
 
         # ── BHT ──────────────────────────────────────────────────────────────
         elif sid == "BHT":
-            result["transaction_info"]["hierarchical_structure_code"] = el[1] if n > 1 else None
-            result["transaction_info"]["transaction_set_purpose_code"] = "Original" if el[2] == "01" else el[2] if n > 2 else None
-            result["transaction_info"]["transaction_ref_id"]          = el[3] if n > 3 else None
-            result["transaction_info"]["transaction_date"]            = el[4] if n > 4 else None
-            result["transaction_info"]["transaction_time"]           = el[5] if n > 5 else None
-            result["transaction_info"]["transaction_type"]            = el[6] if n > 6 else None
+            result["transaction_info"]["hierarchical_structure_code"] = el[0] if n > 0 else None
+            result["transaction_info"]["transaction_set_purpose_code"] = "Original" if el[1] == "01" else el[1] if n > 1 else None
+            result["transaction_info"]["transaction_ref_id"]          = el[2] if n > 2 else None
+            result["transaction_info"]["transaction_date"]            = el[3] if n > 3 else None
+            result["transaction_info"]["transaction_time"]           = el[4] if n > 4 else None
+            result["transaction_info"]["transaction_type"]            = el[5] if n > 5 else None
 
         # ── NM1 ─────────────────────────────────────────────────────────────
         elif sid == "NM1":
-            entity_code = el[1] if n > 1 else None
+            entity_code = el[0] if n > 0 else None
             entity_name = ENTITY_CODES.get(entity_code, entity_code)
             record = {
                 "entity_code":      entity_code,
                 "entity_type":      entity_name,
-                "name_last":        el[3] if n > 3 else None,
-                "name_first":       el[4] if n > 4 else None,
-                "name_middle":      el[5] if n > 5 else None,
-                "name_prefix":      el[6] if n > 6 else None,
-                "name_suffix":      el[7] if n > 7 else None,
-                "id_code_qual":     el[8] if n > 8 else None,
-                "id_code":          el[9] if n > 9 else None,
+                "name_last":        el[2] if n > 2 else None,
+                "name_first":       el[3] if n > 3 else None,
+                "name_middle":      el[4] if n > 4 else None,
+                "name_prefix":      el[5] if n > 5 else None,
+                "name_suffix":      el[6] if n > 6 else None,
+                "id_code_qual":     el[7] if n > 7 else None,
+                "id_code":          el[8] if n > 8 else None,
             }
 
             if entity_code in ("6A", "2B"):
@@ -217,15 +217,15 @@ def parse_edi278(raw):
 
         # ── PER ────────────────────────────────────────────────────────────
         elif sid == "PER":
-            if last_nm1_entity == "6A" and n > 2:
-                result["requestor"]["contact_name"]  = el[2] if n > 2 else None
-                result["requestor"]["contact_phones"] = [p for p in (el[4] if n > 4 else None, el[6] if n > 6 else None) if p]
+            if last_nm1_entity == "6A" and n > 1:
+                result["requestor"]["contact_name"]  = el[1] if n > 1 else None
+                result["requestor"]["contact_phones"] = [p for p in (el[3] if n > 3 else None, el[5] if n > 5 else None) if p]
 
         # ── INS ─────────────────────────────────────────────────────────────
         elif sid == "INS":
-            result["subscriber"]["relationship_code"] = el[2] if n > 2 else None
-            result["subscriber"]["relationship"]      = RELATIONSHIP_CODES.get(el[2], el[2])
-            result["subscriber"]["benefit_status"]    = "Active" if el[3] == "A" else el[3]
+            result["subscriber"]["relationship_code"] = el[1] if n > 1 else None
+            result["subscriber"]["relationship"]      = RELATIONSHIP_CODES.get(el[1], el[1])
+            result["subscriber"]["benefit_status"]    = "Active" if el[2] == "A" else el[2]
 
         # ── HI ─────────────────────────────────────────────────────────────
         elif sid == "HI":
@@ -248,15 +248,15 @@ def parse_edi278(raw):
 
         # ── SVC ─────────────────────────────────────────────────────────────
         elif sid == "SVC":
-            if n > 1:
-                code_qual = el[0] if ":" not in el[0] else el[0].split(":")[0]
-                procedure_code = el[0].split(":")[1] if ":" in el[0] else (el[1] if n > 1 else None)
+            if n > 0:
+                code_qual = el[0].split(":")[0] if ":" in el[0] else ""
+                procedure_code = el[0].split(":")[1] if ":" in el[0] else el[0]
                 result["services"].append({
                     "procedure_code":  procedure_code,
-                    "modifier":        el[2] if n > 2 else None,
-                    "units":           el[4] if n > 4 else None,
-                    "service_amount":  el[5] if n > 5 else None,
-                    "line_item_ref":  el[6] if n > 6 else None,
+                    "modifier":        el[1] if n > 1 else None,
+                    "units":           el[3] if n > 3 else None,
+                    "service_amount":  el[4] if n > 4 else None,
+                    "line_item_ref":  el[5] if n > 5 else None,
                 })
 
         # ── HCR ─────────────────────────────────────────────────────────────
