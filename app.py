@@ -143,7 +143,7 @@ def parse_edi278(raw):
         line = line.strip().strip('|')
         if not line:
             continue
-        parts = [p.strip() for p in line.split('|')]
+        parts = [p.strip() for p in line.split('*')]
         seg_id = parts[0] if parts else ""
         elements = parts[1:] if len(parts) > 1 else []
         segments.append({"segment_id": seg_id, "elements": elements})
@@ -229,19 +229,22 @@ def parse_edi278(raw):
 
         # ── HI ─────────────────────────────────────────────────────────────
         elif sid == "HI":
-            for i, e in enumerate(el):
-                if e and e[0] in "ABCDEFGHIJKLMN":
-                    code_type_map = {
-                        "ABK": "Principal Diagnosis",
-                        "ABF": "Diagnosis",
-                        "BK":  "Diagnosis",
-                        "BF":  "Diagnosis",
-                    }
-                    cd = get_segment_code([e[:2]], code_type_map)
-                    if not cd:
-                        cd = get_segment_code([e[:1]], code_type_map)
-                    code_val = e[2:] if len(e) > 2 else e
-                    result["diagnosis_codes"].append({"code_type": cd or "Diagnosis", "code": code_val})
+            for e in el:
+                if not e:
+                    continue
+                # Composite element like "ABF*:J06.9" or "J06.9"
+                code_type_map = {
+                    "ABK": "Principal Diagnosis",
+                    "ABF": "Diagnosis",
+                    "BK":  "Diagnosis",
+                    "BF":  "Diagnosis",
+                }
+                # e.g. "ABF*:J06.9" → ("ABF", "J06.9")
+                parts_colon = e.split(':')
+                code_val = parts_colon[-1]  # "J06.9"
+                qualifier = parts_colon[0] if len(parts_colon) > 1 else ""
+                cd = code_type_map.get(qualifier[:2]) or code_type_map.get(qualifier[:1])
+                result["diagnosis_codes"].append({"code_type": cd or "Diagnosis", "code": code_val})
 
         # ── SVC ─────────────────────────────────────────────────────────────
         elif sid == "SVC":
