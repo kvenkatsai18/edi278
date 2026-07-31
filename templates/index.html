@@ -1,0 +1,578 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>EDI 278 Parser</title>
+  <style>
+    :root {
+      --bg:       #0f1117;
+      --surface:  #161b22;
+      --card:     #1c2128;
+      --border:   #30363d;
+      --accent:   #58a6ff;
+      --green:    #3fb950;
+      --red:      #f85149;
+      --yellow:   #d29922;
+      --gray:     #8b949e;
+      --text:     #e6edf3;
+      --tag-bg:   rgba(136,192,208,0.12);
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 2rem;
+    }
+
+    h1 {
+      font-size: 1.6rem;
+      font-weight: 700;
+      color: var(--accent);
+      margin-bottom: 0.25rem;
+      letter-spacing: -0.02em;
+    }
+
+    .subtitle {
+      color: var(--gray);
+      font-size: 0.85rem;
+      margin-bottom: 2rem;
+    }
+
+    /* ── Input Card ─────────────────────────────── */
+    .input-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 1.5rem;
+      width: 100%;
+      max-width: 860px;
+      margin-bottom: 1.5rem;
+    }
+
+    .input-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 0.75rem;
+    }
+
+    .input-label {
+      font-size: 0.8rem;
+      font-weight: 600;
+      color: var(--gray);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+
+    textarea {
+      width: 100%;
+      height: 200px;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--text);
+      font-family: 'Cascadia Code', 'Fira Code', 'Courier New', monospace;
+      font-size: 0.78rem;
+      padding: 1rem;
+      resize: vertical;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+    textarea:focus { border-color: var(--accent); }
+
+    .btn-row {
+      display: flex;
+      gap: 0.75rem;
+      margin-top: 1rem;
+    }
+
+    button {
+      padding: 0.55rem 1.4rem;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      font-size: 0.85rem;
+      font-weight: 500;
+      cursor: pointer;
+      transition: opacity 0.15s, border-color 0.15s;
+    }
+    button:hover { opacity: 0.85; }
+
+    .btn-primary {
+      background: var(--accent);
+      color: #0d1117;
+      border-color: var(--accent);
+    }
+
+    .btn-secondary {
+      background: var(--card);
+      color: var(--text);
+    }
+
+    /* ── Result Cards ───────────────────────────── */
+    #result {
+      width: 100%;
+      max-width: 860px;
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+    }
+
+    .section-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      overflow: hidden;
+    }
+
+    .section-header {
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      padding: 0.9rem 1.2rem;
+      border-bottom: 1px solid var(--border);
+      background: var(--card);
+    }
+
+    .section-icon {
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.85rem;
+      flex-shrink: 0;
+    }
+
+    .icon-info    { background: rgba(88,166,255,0.15);  color: var(--accent); }
+    .icon-person  { background: rgba(136,192,208,0.15); color: #88c0d0; }
+    .icon-doc     { background: rgba(163,113,247,0.15);  color: #a371f7; }
+    .icon-alert   { background: rgba(210,153,34,0.15);  color: var(--yellow); }
+    .icon-pill    { background: rgba(63,185,80,0.15);    color: var(--green); }
+    .icon-check   { background: rgba(63,185,80,0.15);   color: var(--green); }
+    .icon-question{ background: rgba(248,81,73,0.15);    color: var(--red); }
+
+    .section-title {
+      font-size: 0.88rem;
+      font-weight: 600;
+      color: var(--text);
+    }
+
+    .card-body {
+      padding: 1.1rem 1.2rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.55rem;
+    }
+
+    /* ── Data Grid ──────────────────────────────── */
+    .data-row {
+      display: grid;
+      grid-template-columns: 200px 1fr;
+      gap: 0.25rem 1rem;
+      align-items: baseline;
+    }
+
+    .data-label {
+      font-size: 0.78rem;
+      color: var(--gray);
+      font-weight: 500;
+    }
+
+    .data-value {
+      font-size: 0.88rem;
+      color: var(--text);
+      word-break: break-word;
+    }
+
+    /* ── Tags ──────────────────────────────────── */
+    .tag {
+      display: inline-block;
+      padding: 0.2rem 0.6rem;
+      border-radius: 20px;
+      font-size: 0.75rem;
+      font-weight: 600;
+    }
+
+    .tag-success { background: rgba(63,185,80,0.15);  color: var(--green);  border: 1px solid rgba(63,185,80,0.3); }
+    .tag-danger  { background: rgba(248,81,73,0.15);  color: var(--red);    border: 1px solid rgba(248,81,73,0.3); }
+    .tag-warning { background: rgba(210,153,34,0.15); color: var(--yellow); border: 1px solid rgba(210,153,34,0.3); }
+    .tag-info    { background: rgba(88,166,255,0.15); color: var(--accent); border: 1px solid rgba(88,166,255,0.3); }
+
+    /* ── Code List ──────────────────────────────── */
+    .code-list {
+      display: flex;
+      flex-direction: column;
+      gap: 0.4rem;
+    }
+
+    .code-item {
+      display: flex;
+      align-items: baseline;
+      gap: 0.75rem;
+    }
+
+    .code-type {
+      font-size: 0.72rem;
+      color: var(--gray);
+      min-width: 150px;
+    }
+
+    .code-value {
+      font-family: monospace;
+      font-size: 0.85rem;
+      color: var(--accent);
+      background: rgba(88,166,255,0.08);
+      padding: 0.1rem 0.4rem;
+      border-radius: 4px;
+    }
+
+    /* ── Service List ───────────────────────────── */
+    .service-row {
+      display: flex;
+      align-items: baseline;
+      gap: 1rem;
+      flex-wrap: wrap;
+    }
+
+    .service-code {
+      font-family: monospace;
+      font-size: 0.9rem;
+      color: var(--accent);
+      font-weight: 600;
+    }
+
+    .service-meta {
+      font-size: 0.78rem;
+      color: var(--gray);
+    }
+
+    /* ── Notes ──────────────────────────────────── */
+    .note-item {
+      background: var(--card);
+      border-radius: 6px;
+      padding: 0.6rem 0.9rem;
+      font-size: 0.85rem;
+      color: var(--text);
+      border-left: 3px solid var(--yellow);
+    }
+
+    .note-type {
+      font-size: 0.72rem;
+      color: var(--gray);
+      margin-bottom: 0.2rem;
+      text-transform: uppercase;
+    }
+
+    /* ── Raw Segments ──────────────────────────── */
+    .raw-segments {
+      display: none;
+      font-family: monospace;
+      font-size: 0.75rem;
+    }
+
+    .raw-segments.visible { display: block; }
+
+    .segment-row {
+      padding: 0.35rem 1.2rem;
+      border-bottom: 1px solid rgba(48,54,61,0.5);
+      display: flex;
+      gap: 1rem;
+    }
+
+    .segment-row:last-child { border-bottom: none; }
+
+    .segment-id {
+      color: var(--accent);
+      font-weight: 600;
+      min-width: 40px;
+    }
+
+    .segment-content {
+      color: var(--gray);
+      word-break: break-all;
+    }
+
+    /* ── Decision Card ──────────────────────────── */
+    .decision-bar {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      margin-bottom: 0.75rem;
+    }
+
+    .decision-code {
+      font-size: 1.4rem;
+      font-weight: 800;
+    }
+
+    /* ── Empty / Error ────────────────────────── */
+    .empty-state, .error-box {
+      text-align: center;
+      padding: 2.5rem;
+      color: var(--gray);
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+    }
+
+    .error-box {
+      color: var(--red);
+      text-align: left;
+      padding: 1rem 1.2rem;
+    }
+
+    .empty-state .icon { font-size: 2rem; margin-bottom: 0.5rem; display: block; }
+
+    /* ── Toggle Raw Button ─────────────────────── */
+    .toggle-raw {
+      margin-top: 0.5rem;
+      font-size: 0.78rem;
+    }
+  </style>
+</head>
+<body>
+
+  <h1>EDI 278 → Human Readable</h1>
+  <p class="subtitle">Healthcare Authorization Transaction Parser</p>
+
+  <div class="input-card">
+    <div class="input-header">
+      <span class="input-label">Raw EDI 278</span>
+    </div>
+    <textarea id="ediInput" placeholder="Paste raw EDI 278 text here..."></textarea>
+    <div class="btn-row">
+      <button class="btn-primary" onclick="parse()">Parse →</button>
+      <button class="btn-secondary" onclick="loadSample()">Load Sample</button>
+      <button class="btn-secondary" onclick="clearInput()">Clear</button>
+    </div>
+  </div>
+
+  <div id="result">
+    <div class="empty-state">
+      <span class="icon">📋</span>
+      <p>Parsed output will appear here</p>
+    </div>
+  </div>
+
+  <script>
+    const SAMPLE = `ISA*00*          *00*          *ZZ*SUBMITTER     *ZZ*PAYER         *240630*0812*^*00501*000000001*0*P*:~
+ST*278*0001~
+BHT*0019*11*REF001*20240630*0812*RG~
+NM1*6A*2*REQUESTER NAME*****XX*1234567890~
+PER*IC*CONTACT NAME*TE*8005551234~
+NM1*1B*2*SUBSCRIBER LAST*SUBSCRIBER FIRST*****MI*MEM000123456~
+INS*Y*18*18*021*1*A*******T*AC~
+HI*ABF*:J06.9~
+SVC*HC:99213*1***150~
+HCR*1*A**4~
+NTE*ADD*Patient presents with symptoms of acute bacterial infection~
+REF*1L*MEM000123456~
+REF*0B*12-3456789~
+`;
+
+    function parse() {
+      const raw = document.getElementById('ediInput').value;
+      if (!raw.trim()) return;
+
+      const formData = new FormData();
+      formData.append('edi', raw);
+
+      fetch('/parse', { method: 'POST', body: formData })
+        .then(r => r.json())
+        .then(d => {
+          if (d.error) { showError(d.error); return; }
+          render(d);
+        })
+        .catch(err => showError('Request failed: ' + err));
+    }
+
+    function loadSample() {
+      document.getElementById('ediInput').value = SAMPLE.trim();
+    }
+
+    function clearInput() {
+      document.getElementById('ediInput').value = '';
+      document.getElementById('result').innerHTML = '<div class="empty-state"><span class="icon">📋</span><p>Parsed output will appear here</p></div>';
+    }
+
+    function render(d) {
+      let html = '';
+
+      // ── Transaction Info ─────────────────────────────────────────────────
+      const ti = d.transaction_info || {};
+      const tiRows = [
+        ['Transaction Set ID', ti.transaction_set_id],
+        ['Transaction Set Code', ti.transaction_set_code],
+        ['Purpose', ti.transaction_set_purpose_code],
+        ['Reference ID', ti.transaction_ref_id],
+        ['Date', ti.transaction_date ? formatDate(ti.transaction_date) : null],
+        ['Time', ti.transaction_time],
+        ['Type', ti.transaction_type],
+      ].filter(r => r[1]);
+
+      if (tiRows.length) {
+        html += card('Transaction Info', 'info', rows(tiRows));
+      }
+
+      // ── Requestor ────────────────────────────────────────────────────────
+      const req = d.requestor || {};
+      const reqRows = [
+        ['Entity', req.entity_type],
+        ['Last Name', req.name_last],
+        ['First Name', req.name_first],
+        ['Contact', req.contact_name],
+        ['Phone(s)', req.contact_phones ? req.contact_phones.join(', ') : null],
+        ['Tax ID', req.tax_id],
+        ['ID Code', req.id_code],
+      ].filter(r => r[1]);
+      if (reqRows.length) html += card('Requestor', 'person', rows(reqRows));
+
+      // ── Subscriber ───────────────────────────────────────────────────────
+      const sub = d.subscriber || {};
+      const subRows = [
+        ['Entity', sub.entity_type],
+        ['Relationship', sub.relationship],
+        ['Benefit Status', sub.benefit_status],
+        ['Member ID', sub.member_id],
+        ['Last Name', sub.name_last],
+        ['First Name', sub.name_first],
+        ['ID Code', sub.id_code],
+      ].filter(r => r[1]);
+      if (subRows.length) html += card('Subscriber', 'person', rows(subRows));
+
+      // ── Patient ─────────────────────────────────────────────────────────
+      const pat = d.patient || {};
+      const patRows = [
+        ['Entity', pat.entity_type],
+        ['Last Name', pat.name_last],
+        ['First Name', pat.name_first],
+        ['ID Code', pat.id_code],
+      ].filter(r => r[1]);
+      if (patRows.length) html += card('Patient', 'person', rows(patRows));
+
+      // ── Payer ────────────────────────────────────────────────────────────
+      const pay = d.payer || {};
+      const payRows = [
+        ['Entity', pay.entity_type],
+        ['Last Name', pay.name_last],
+        ['First Name', pay.name_first],
+        ['ID Code', pay.id_code],
+      ].filter(r => r[1]);
+      if (payRows.length) html += card('Payer', 'doc', rows(payRows));
+
+      // ── Diagnosis Codes ─────────────────────────────────────────────────
+      if (d.diagnosis_codes && d.diagnosis_codes.length) {
+        const items = d.diagnosis_codes.map(dx =>
+          `<div class="code-item"><span class="code-type">${esc(dx.code_type || 'Diagnosis')}</span><span class="code-value">${esc(dx.code)}</span></div>`
+        ).join('');
+        html += card('Diagnosis Codes', 'pill', `<div class="code-list">${items}</div>`);
+      }
+
+      // ── Services / Procedures ──────────────────────────────────────────
+      if (d.services && d.services.length) {
+        const items = d.services.map(svc => {
+          let meta = [];
+          if (svc.modifier)        meta.push(`Modifier: ${esc(svc.modifier)}`);
+          if (svc.units)          meta.push(`Units: ${esc(svc.units)}`);
+          if (svc.service_amount) meta.push(`Amount: $${esc(svc.service_amount)}`);
+          if (svc.line_item_ref)   meta.push(`Line Ref: ${esc(svc.line_item_ref)}`);
+          return `<div class="service-row">
+            <span class="service-code">${esc(svc.procedure_code || '—')}</span>
+            <span class="service-meta">${meta.join(' · ') || 'No additional info'}</span>
+          </div>`;
+        }).join('');
+        html += card('Services & Procedures', 'doc', items);
+      }
+
+      // ── Authorization Decision ───────────────────────────────────────────
+      const auth = d.authorization || {};
+      if (auth.decision_code) {
+        const tagCls = { A: 'tag-success', D: 'tag-danger', P: 'tag-warning', R: 'tag-danger', S: 'tag-warning', C: 'tag-warning' }[auth.decision_code] || 'tag-info';
+        const iconCls = { A: 'icon-check', D: 'icon-question', P: 'icon-alert', R: 'icon-question', S: 'icon-alert' }[auth.decision_code] || 'icon-info';
+        const authItems = [
+          ['Status', `<span class="tag ${tagCls}">${esc(auth.decision || auth.decision_code)}</span>`],
+          ['Timing', auth.timing],
+          ['Outcome', auth.outcome],
+          ['Reason', auth.reason],
+        ].filter(r => r[1]);
+        html += card('Authorization Decision', iconCls, rows(authItems));
+      }
+
+      // ── Notes ───────────────────────────────────────────────────────────
+      if (d.notes && d.notes.length) {
+        const items = d.notes.map(n =>
+          `<div class="note-item"><div class="note-type">${esc(n.type || 'Note')}</div>${esc(n.text)}</div>`
+        ).join('');
+        html += card('Notes', 'alert', items);
+      }
+
+      // ── References ───────────────────────────────────────────────────────
+      if (d.references && d.references.length) {
+        const rows_data = d.references.map(r => [esc(r.qualifier || '—'), esc(r.value || '—')]);
+        html += card('References', 'info', rows([['Qualifier', 'Value']].concat(rows_data)));
+      }
+
+      // ── Raw Segments ─────────────────────────────────────────────────────
+      if (d.raw_segments && d.raw_segments.length) {
+        const rawRows = d.raw_segments.map(seg =>
+          `<div class="segment-row"><span class="segment-id">${esc(seg.segment_id)}</span><span class="segment-content">${seg.elements.map(e => esc(e)).join(' * ')}</span></div>`
+        ).join('');
+        html += `<div class="section-card">
+          <div class="section-header">
+            <div class="section-icon icon-info">📄</div>
+            <span class="section-title">Raw Segments</span>
+          </div>
+          <div class="card-body">
+            <button class="btn-secondary toggle-raw" onclick="document.getElementById('rawSegs').classList.toggle('visible')">Toggle Raw</button>
+            <div class="raw-segments" id="rawSegs">${rawRows}</div>
+          </div>
+        </div>`;
+      }
+
+      document.getElementById('result').innerHTML = html || '<div class="empty-state"><span class="icon">⚠</span><p>No recognizable EDI 278 data found.</p></div>';
+    }
+
+    function card(title, icon, content) {
+      const icons = { info:'ℹ', person:'👤', doc:'📄', alert:'⚠', pill:'💊', check:'✓', question:'❓' };
+      return `<div class="section-card">
+        <div class="section-header">
+          <div class="section-icon icon-${icon}">${icons[icon] || '•'}</div>
+          <span class="section-title">${title}</span>
+        </div>
+        <div class="card-body">${content}</div>
+      </div>`;
+    }
+
+    function rows(arr) {
+      return arr.map(([label, value]) =>
+        `<div class="data-row"><span class="data-label">${label}</span><span class="data-value">${value}</span></div>`
+      ).join('');
+    }
+
+    function esc(str) {
+      if (!str) return '';
+      const d = document.createElement('div');
+      d.textContent = str;
+      return d.innerHTML;
+    }
+
+    function formatDate(ds) {
+      if (!ds || ds.length !== 8) return ds || '';
+      return `${ds.slice(4,6)}/${ds.slice(6,8)}/${ds.slice(0,4)}`;
+    }
+
+    function showError(msg) {
+      document.getElementById('result').innerHTML = `<div class="error-box">⚠ ${esc(msg)}</div>`;
+    }
+  </script>
+</body>
+</html>
