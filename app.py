@@ -278,6 +278,20 @@ MEDICARE_STATUS_CODES = {
 
 
 def parse_edi834(raw):
+    """
+    EDI 834 Benefit Enrollment parser.
+    Handles INS and NM1 segments arriving in any order per member.
+
+    State machine:
+    - member_name_list: names (keyed by last:first:middle) as NM1 IL arrives
+    - pending_ins: None | {"type": "Self"|"Non-self", "data": ins_record}
+      Set when INS arrives before the member's NM1.
+    - When NM1 IL arrives: if pending_ins, complete and save the member;
+      else buffer the name for later INS.
+    - Self INS: demote any previously saved subscriber first.
+    - Non-self INS with pending Self INS: the Self member (name in
+      member_name_list[-1]) is the subscriber - complete them immediately.
+    """
     segments = parse_segments(raw)
 
     result = {
@@ -287,15 +301,22 @@ def parse_edi834(raw):
         "raw_segments": segments,
     }
 
-    last_nm1_entity = None
-    current_subscriber = {}
+    member_name_list = []    # ordered member names as NM1 IL arrives
+    pending_ins = None      # {"type": "Self"|"Non-self", "data": ins_record}
+    _subscriber_saved = False
+    _saved_keys = set()     # member keys already flushed
+
+    def _mkkey(d):
+        return (d.get("name_last") or "") + ":" + (d.get("name_first") or "") + ":" + (d.get("name_middle") or "")
+
     current_dependent = {}
+    current_subscriber = {}
     in_dependent_loop = False
 
     for seg in segments:
         sid, el, n = seg["segment_id"], seg["elements"], len(seg["elements"])
 
-        # ── ST ──────────────────────────────────────────────────────────────
+        # - ST -
         if sid == "ST":
             result["transaction_info"] = {
                 "transaction_set_id":   el[0] if n > 0 else None,
@@ -304,7 +325,7 @@ def parse_edi834(raw):
                 "group_control_num":   el[3] if n > 3 else None,
             }
 
-        # ── BGN ─────────────────────────────────────────────────────────────
+        # - BGN -
         elif sid == "BGN":
             result["transaction_info"].update({
                 "reference_id":          el[1] if n > 1 else None,
@@ -316,31 +337,31 @@ def parse_edi834(raw):
                 "action_code":           el[7] if n > 7 else None,
             })
 
-        # ── N1 ──────────────────────────────────────────────────────────────
+        # - N1 -
         elif sid == "N1":
             entity_code = el[0] if n > 0 else None
-            if entity_code == "P5":  # Plan Sponsor
-                result["sponsor"].update({
-                    "entity_code":    entity_code,
-                    "name":           el[2] if n > 2 else None,
-                    "id_code_qual":   el[3] if n > 3 else None,
-                    "id_code":        el[4] if n > 4 else None,
-                })
-            elif entity_code == "IN":  # Insurer
+            if entity_code == "P5":
+                result["sponsor"]["name"] = el[2] if n > 2 else None
+                result["sponsor"]["id_code"] = el[3] if n > 3 else None
+                result["sponsor"]["id_code_qual"] = el[4] if n > 4 else None
+            elif entity_code == "IN":
+                result["sponsor"]["insurer_name"] = el[2] if n > 2 else None
+                result["sponsor"]["insurer_id"] = el[3] if n > 3 else None
+            elif entity_code == "IL":
                 result["sponsor"]["insurer_name"] = el[2] if n > 2 else None
                 result["sponsor"]["insurer_id_qual"] = el[3] if n > 3 else None
                 result["sponsor"]["insurer_id"] = el[4] if n > 4 else None
-            elif entity_code == "IH":  # TPA/Insurer (alternate)
+            elif entity_code == "IH":
                 result["sponsor"]["tpa_name"] = el[2] if n > 2 else None
 
-        # ── N2 ───────────────────────────────────────────────────────────────
+        # - N2 -
         elif sid == "N2":
             if in_dependent_loop:
                 current_dependent["name_org"] = el[0] if n > 0 else None
             else:
                 result["sponsor"]["name_2"] = el[0] if n > 0 else None
 
-        # ── N3 / N4 ─────────────────────────────────────────────────────────
+        # - N3 / N4 -
         elif sid == "N3":
             addr = {"address_line_1": el[0] if n > 0 else None}
             if in_dependent_loop:
@@ -356,9 +377,10 @@ def parse_edi834(raw):
             if in_dependent_loop:
                 current_dependent.update(addr_part)
             else:
-                result["sponsor"]["address"].update(addr_part)
+                if result["sponsor"].get("address"):
+                    result["sponsor"]["address"].update(addr_part)
 
-        # ── PER ─────────────────────────────────────────────────────────────
+        # - PER -
         elif sid == "PER":
             contact = {
                 "contact_name": el[1] if n > 1 else None,
@@ -370,7 +392,7 @@ def parse_edi834(raw):
             else:
                 result["sponsor"]["contact"] = contact
 
-        # ── DMG ─────────────────────────────────────────────────────────────
+        # - DMG -
         elif sid == "DMG":
             dmg = {
                 "date_format": el[0] if n > 0 else None,
@@ -381,10 +403,12 @@ def parse_edi834(raw):
             }
             if in_dependent_loop:
                 current_dependent.update(dmg)
+            elif pending_ins is not None:
+                pending_ins["data"].update(dmg)
             else:
                 current_subscriber.update(dmg)
 
-        # ── HD ───────────────────────────────────────────────────────────────
+        # - HD -
         elif sid == "HD":
             maintenance_type = el[0] if n > 0 else None
             benefit_status = el[1] if n > 1 else None
@@ -394,7 +418,7 @@ def parse_edi834(raw):
             result["plan"]["plan_coverage_desc"] = el[4] if n > 4 else None
             result["plan"]["insurance_line_code"] = el[3] if n > 3 else None
 
-        # ── DTP ─────────────────────────────────────────────────────────────
+        # - DTP -
         elif sid == "DTP":
             date_qual = el[0] if n > 0 else None
             date_fmt  = el[1] if n > 1 else None
@@ -411,20 +435,26 @@ def parse_edi834(raw):
                 "qualifier": qual_label, "format": date_fmt, "date": date_val
             })
 
-        # ── REF ─────────────────────────────────────────────────────────────
+        # - REF -
         elif sid == "REF":
             ref = {"qualifier": el[0] if n > 0 else None, "value": el[1] if n > 1 else None, "description": el[2] if n > 2 else None}
             result["references"].append(ref)
-            # also attach to current subscriber
             q = ref["qualifier"]
             if q in ("0F", "1L", "23", "CE", "CI", "CT", "EH", "F6", "GE", "GO", "HP", "LU", "MR", "N6", "N7", "N9", "NB", "NQ", "NR", "PH", "PP", "Q4", "RL", "SJ", "ST", "TJ", "TN", "Y5", "ZH"):
-                current_subscriber[f"ref_{q}"] = ref["value"]
+                if in_dependent_loop:
+                    current_dependent["ref_" + q] = ref["value"]
+                elif pending_ins is not None:
+                    pending_ins["data"]["ref_" + q] = ref["value"]
+                else:
+                    current_subscriber["ref_" + q] = ref["value"]
             if q == "1L":
-                current_subscriber["member_id"] = ref["value"]
+                target = current_dependent if in_dependent_loop else (pending_ins["data"] if pending_ins else current_subscriber)
+                target["member_id"] = ref["value"]
             elif q == "0F":
-                current_subscriber["ssn"] = ref["value"]
+                target = current_dependent if in_dependent_loop else (pending_ins["data"] if pending_ins else current_subscriber)
+                target["ssn"] = ref["value"]
 
-        # ── NM1 ─────────────────────────────────────────────────────────────
+        # - NM1 -
         elif sid == "NM1":
             entity_code = el[0] if n > 0 else None
             entity_name = {
@@ -445,17 +475,24 @@ def parse_edi834(raw):
             }
 
             if entity_code == "IL":
-                # Save any prior subscriber
-                if current_subscriber.get("name_first") or current_subscriber.get("name_last"):
-                    if current_dependent:
-                        result["dependents"].append(dict(current_dependent))
+                mkey = _mkkey(record)
+                if pending_ins is not None:
+                    ins_data = pending_ins["data"]
+                    ins_type = pending_ins["type"]
+                    member_record = dict(record)
+                    member_record.update(ins_data)
+                    if ins_type == "Self":
+                        result["subscriber"] = member_record
+                        _subscriber_saved = True
                     else:
-                        result["subscriber"] = dict(current_subscriber)
-                current_subscriber = dict(record)
-                current_dependent = {}
-                in_dependent_loop = False
+                        if mkey not in _saved_keys:
+                            result["dependents"].append(member_record)
+                    _saved_keys.add(mkey)
+                    pending_ins = None
+                else:
+                    member_name_list.append(mkey)
+
             elif entity_code == "QD":
-                # Save any prior dependent
                 if current_dependent.get("name_first") or current_dependent.get("name_last"):
                     result["dependents"].append(dict(current_dependent))
                 current_dependent = dict(record)
@@ -463,23 +500,83 @@ def parse_edi834(raw):
 
             last_nm1_entity = entity_code
 
-        # ── INS ─────────────────────────────────────────────────────────────
+        # - INS -
         elif sid == "INS":
-            ins_record = {
-                "relationship_code":  el[1] if n > 1 else None,
-                "relationship":       RELATIONSHIP_CODES_834.get(el[1], el[1]),
-                "benefit_status":     COVERAGE_STATUS.get(el[2], el[2]) if n > 2 else None,
-                "employment_status": EMPLOYMENT_STATUS.get(el[6], el[6]) if n > 6 else None,
-                "cob":                "COBRA Enrollee" if el[8] == "H" else el[8],
-                "medicare_status":    MEDICARE_STATUS_CODES.get(el[12], el[12]) if n > 12 else None,
-                "date_of_death":      format_date(el[17]) if n > 17 and el[17] else None,
-            }
-            if in_dependent_loop:
-                current_dependent.update(ins_record)
-            else:
-                current_subscriber.update(ins_record)
+            rel = el[1] if n > 1 else None
+            is_self = rel in ("18", "01", "32")
 
-        # ── MPI ─────────────────────────────────────────────────────────────
+            ins_record = {
+                "relationship_code":  rel,
+                "relationship":       RELATIONSHIP_CODES_834.get(rel, rel),
+                "benefit_status":     COVERAGE_STATUS.get(el[2], el[2]) if n > 2 else None,
+                "employment_status":  EMPLOYMENT_STATUS.get(el[6], el[6]) if n > 6 else None,
+                "cob":               "COBRA Enrollee" if n > 8 and el[8] == "H" else (el[8] if n > 8 else None),
+                "medicare_status":   MEDICARE_STATUS_CODES.get(el[12], el[12]) if n > 12 else None,
+                "date_of_death":     format_date(el[17]) if n > 17 and el[17] else None,
+            }
+
+            if is_self:
+                # SELF INS: demote any previously saved subscriber first
+                if _subscriber_saved and result["subscriber"].get("name_first"):
+                    prev_key = _mkkey(result["subscriber"])
+                    if prev_key not in _saved_keys:
+                        result["dependents"].append(dict(result["subscriber"]))
+                        _saved_keys.add(prev_key)
+                    result["subscriber"] = {}
+                    _subscriber_saved = False
+                # If this member's NM1 already arrived (name in member_name_list),
+                # complete them immediately as subscriber.
+                if pending_ins is not None and pending_ins["type"] == "Self" and member_name_list:
+                    sub_key = member_name_list[-1]
+                    sub_record = {
+                        "name_last":  sub_key.split(":")[0],
+                        "name_first": sub_key.split(":")[1] if ":" in sub_key else "",
+                    }
+                    sub_record.update(pending_ins["data"])
+                    result["subscriber"] = sub_record
+                    _subscriber_saved = True
+                    _saved_keys.add(sub_key)
+                    member_name_list.pop()  # remove so it won't be re-saved
+                    pending_ins = None
+                else:
+                    # INS arrived before NM1 — store as pending, NM1 will complete this member
+                    pending_ins = {"type": "Self", "data": ins_record}
+            else:
+                # NON-SELF INS: this member is a dependent
+                if pending_ins is not None and pending_ins["type"] == "Self":
+                    # Previous pending is Self INS - subscriber's INS arrived and their NM1
+                    # was already buffered in member_name_list. Complete them NOW.
+                    if member_name_list:
+                        sub_key = member_name_list[-1]
+                        sub_record = {
+                            "name_last":  sub_key.split(":")[0],
+                            "name_first": sub_key.split(":")[1] if ":" in sub_key else "",
+                        }
+                        sub_record.update(pending_ins["data"])
+                        result["subscriber"] = sub_record
+                        _subscriber_saved = True
+                        _saved_keys.add(sub_key)
+                    # New Non-self INS belongs to NEXT member (name not known yet)
+                    pending_ins = {"type": "Non-self", "data": ins_record}
+                elif pending_ins is not None:
+                    # Previous pending is Non-self - their NM1 hasn't arrived.
+                    # They are confirmed as a dependent. Save them now.
+                    prev_ins = pending_ins["data"]
+                    if member_name_list:
+                        prev_key = member_name_list[-1]
+                        prev_record = {
+                            "name_last":  prev_key.split(":")[0],
+                            "name_first": prev_key.split(":")[1] if ":" in prev_key else "",
+                        }
+                        prev_record.update(prev_ins)
+                        if prev_key not in _saved_keys:
+                            result["dependents"].append(prev_record)
+                            _saved_keys.add(prev_key)
+                    # else: no member name yet - INS data will be attached to next NM1
+                # Store new pending Non-self INS for next member
+                pending_ins = {"type": "Non-self", "data": ins_record}
+
+        # - MPI -
         elif sid == "MPI":
             mpi_record = {
                 "medicare_status":   MEDICARE_STATUS_CODES.get(el[0], el[0]) if n > 0 else None,
@@ -488,10 +585,12 @@ def parse_edi834(raw):
             }
             if in_dependent_loop:
                 current_dependent.update(mpi_record)
+            elif pending_ins is not None:
+                pending_ins["data"].update(mpi_record)
             else:
                 current_subscriber.update(mpi_record)
 
-        # ── NTE ─────────────────────────────────────────────────────────────
+        # - NTE -
         elif sid == "NTE":
             note = {"type": el[0] if n > 0 else None, "text": " ".join(el[1:])}
             if in_dependent_loop:
@@ -499,12 +598,26 @@ def parse_edi834(raw):
             else:
                 result["notes"].append(note)
 
-    # Flush last member
-    if current_subscriber.get("name_first") or current_subscriber.get("name_last"):
-        if in_dependent_loop and (current_dependent.get("name_first") or current_dependent.get("name_last")):
-            result["dependents"].append(dict(current_dependent))
+    # - End-of-function flush -
+    if pending_ins is not None:
+        ins_type = pending_ins["type"]
+        ins_data = pending_ins["data"]
+        if member_name_list:
+            last_key = member_name_list[-1]
+            if last_key not in _saved_keys:
+                member_record = {
+                    "name_last":  last_key.split(":")[0],
+                    "name_first": last_key.split(":")[1] if ":" in last_key else "",
+                }
+                member_record.update(ins_data)
+                if ins_type == "Self":
+                    result["subscriber"] = member_record
+                else:
+                    result["dependents"].append(member_record)
+                _saved_keys.add(last_key)
         else:
-            result["subscriber"] = dict(current_subscriber)
+            if ins_type == "Self" and not _subscriber_saved:
+                result["subscriber"] = dict(ins_data)
 
     if current_dependent.get("name_first") or current_dependent.get("name_last"):
         result["dependents"].append(dict(current_dependent))
@@ -541,4 +654,5 @@ def parse():
 
 
 if __name__ == "__main__":
-    app.run(debug=True, host="127.0.0.1", port=5000)
+    from waitress import serve
+    serve(app, host="127.0.0.1", port=5000, threads=6)
