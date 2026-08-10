@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>EDI 278 Parser</title>
+  <title>EDI Parser — 278 &amp; 834</title>
   <style>
     :root {
       --bg:       #0f1117;
@@ -14,9 +14,9 @@
       --green:    #3fb950;
       --red:      #f85149;
       --yellow:   #d29922;
+      --purple:   #a371f7;
       --gray:     #8b949e;
       --text:     #e6edf3;
-      --tag-bg:   rgba(136,192,208,0.12);
     }
 
     * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -36,14 +36,14 @@
       font-size: 1.6rem;
       font-weight: 700;
       color: var(--accent);
-      margin-bottom: 0.25rem;
+      margin-bottom: 0.1rem;
       letter-spacing: -0.02em;
     }
 
     .subtitle {
       color: var(--gray);
-      font-size: 0.85rem;
-      margin-bottom: 2rem;
+      font-size: 0.82rem;
+      margin-bottom: 1.75rem;
     }
 
     /* ── Input Card ─────────────────────────────── */
@@ -62,6 +62,8 @@
       align-items: center;
       justify-content: space-between;
       margin-bottom: 0.75rem;
+      flex-wrap: wrap;
+      gap: 0.5rem;
     }
 
     .input-label {
@@ -71,6 +73,18 @@
       text-transform: uppercase;
       letter-spacing: 0.06em;
     }
+
+    select {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text);
+      font-size: 0.82rem;
+      padding: 0.35rem 0.75rem;
+      cursor: pointer;
+      outline: none;
+    }
+    select:focus { border-color: var(--accent); }
 
     textarea {
       width: 100%;
@@ -92,6 +106,7 @@
       display: flex;
       gap: 0.75rem;
       margin-top: 1rem;
+      flex-wrap: wrap;
     }
 
     button {
@@ -154,11 +169,12 @@
 
     .icon-info    { background: rgba(88,166,255,0.15);  color: var(--accent); }
     .icon-person  { background: rgba(136,192,208,0.15); color: #88c0d0; }
-    .icon-doc     { background: rgba(163,113,247,0.15);  color: #a371f7; }
+    .icon-doc     { background: rgba(163,113,247,0.15);  color: var(--purple); }
     .icon-alert   { background: rgba(210,153,34,0.15);  color: var(--yellow); }
     .icon-pill    { background: rgba(63,185,80,0.15);    color: var(--green); }
-    .icon-check   { background: rgba(63,185,80,0.15);   color: var(--green); }
-    .icon-question{ background: rgba(248,81,73,0.15);    color: var(--red); }
+    .icon-check   { background: rgba(63,185,80,0.15);    color: var(--green); }
+    .icon-question{ background: rgba(248,81,73,0.15);     color: var(--red); }
+    .icon-plan    { background: rgba(235,128,37,0.15);   color: #eb8025; }
 
     .section-title {
       font-size: 0.88rem;
@@ -255,6 +271,20 @@
       color: var(--gray);
     }
 
+    /* ── Date List ─────────────────────────────── */
+    .date-list { display: flex; flex-direction: column; gap: 0.4rem; }
+    .date-item { display: flex; align-items: baseline; gap: 0.75rem; }
+    .date-qual { font-size: 0.75rem; color: var(--gray); min-width: 180px; }
+    .date-val  { font-size: 0.85rem; color: var(--text); }
+
+    /* ── Dependent Card ────────────────────────── */
+    .dep-item {
+      background: var(--card);
+      border-radius: 6px;
+      padding: 0.75rem 1rem;
+      border-left: 3px solid #88c0d0;
+    }
+
     /* ── Notes ──────────────────────────────────── */
     .note-item {
       background: var(--card);
@@ -273,12 +303,7 @@
     }
 
     /* ── Raw Segments ──────────────────────────── */
-    .raw-segments {
-      display: none;
-      font-family: monospace;
-      font-size: 0.75rem;
-    }
-
+    .raw-segments { display: none; font-family: monospace; font-size: 0.75rem; }
     .raw-segments.visible { display: block; }
 
     .segment-row {
@@ -287,32 +312,9 @@
       display: flex;
       gap: 1rem;
     }
-
     .segment-row:last-child { border-bottom: none; }
-
-    .segment-id {
-      color: var(--accent);
-      font-weight: 600;
-      min-width: 40px;
-    }
-
-    .segment-content {
-      color: var(--gray);
-      word-break: break-all;
-    }
-
-    /* ── Decision Card ──────────────────────────── */
-    .decision-bar {
-      display: flex;
-      align-items: center;
-      gap: 0.75rem;
-      margin-bottom: 0.75rem;
-    }
-
-    .decision-code {
-      font-size: 1.4rem;
-      font-weight: 800;
-    }
+    .segment-id    { color: var(--accent); font-weight: 600; min-width: 40px; }
+    .segment-content { color: var(--gray); word-break: break-all; }
 
     /* ── Empty / Error ────────────────────────── */
     .empty-state, .error-box {
@@ -332,23 +334,36 @@
 
     .empty-state .icon { font-size: 2rem; margin-bottom: 0.5rem; display: block; }
 
-    /* ── Toggle Raw Button ─────────────────────── */
-    .toggle-raw {
-      margin-top: 0.5rem;
-      font-size: 0.78rem;
+    .toggle-raw { margin-top: 0.5rem; font-size: 0.78rem; }
+
+    /* ── Format Badge ─────────────────────────── */
+    .fmt-badge {
+      display: inline-block;
+      padding: 0.15rem 0.5rem;
+      border-radius: 4px;
+      font-size: 0.7rem;
+      font-weight: 700;
+      font-family: monospace;
+      vertical-align: middle;
     }
+    .fmt-278 { background: rgba(88,166,255,0.15); color: var(--accent); }
+    .fmt-834 { background: rgba(163,113,247,0.15); color: var(--purple); }
   </style>
 </head>
 <body>
 
-  <h1>EDI 278 → Human Readable</h1>
-  <p class="subtitle">Healthcare Authorization Transaction Parser</p>
+  <h1>EDI Parser</h1>
+  <p class="subtitle">Healthcare Authorization &amp; Enrollment Transactions</p>
 
   <div class="input-card">
     <div class="input-header">
-      <span class="input-label">Raw EDI 278</span>
+      <span class="input-label">Format</span>
+      <select id="formatSelect">
+        <option value="278">278 — Health Care Services Decision</option>
+        <option value="834">834 — Benefit Enrollment &amp; Maintenance</option>
+      </select>
     </div>
-    <textarea id="ediInput" placeholder="Paste raw EDI 278 text here..."></textarea>
+    <textarea id="ediInput" placeholder="Paste raw EDI text here..."></textarea>
     <div class="btn-row">
       <button class="btn-primary" onclick="parse()">Parse →</button>
       <button class="btn-secondary" onclick="loadSample()">Load Sample</button>
@@ -364,7 +379,9 @@
   </div>
 
   <script>
-    const SAMPLE = `ISA*00*          *00*          *ZZ*SUBMITTER     *ZZ*PAYER         *240630*0812*^*00501*000000001*0*P*:~
+    // ─── Sample Payloads ─────────────────────────────────────────────────────
+    const SAMPLES = {
+      278: `ISA*00*          *00*          *ZZ*SUBMITTER     *ZZ*PAYER         *240630*0812*^*00501*000000001*0*P*:~
 ST*278*0001~
 BHT*0019*11*REF001*20240630*0812*RG~
 NM1*6A*2*REQUESTER NAME*****XX*1234567890~
@@ -376,15 +393,43 @@ SVC*HC:99213*1***150~
 HCR*1*A**4~
 NTE*ADD*Patient presents with symptoms of acute bacterial infection~
 REF*1L*MEM000123456~
-REF*0B*12-3456789~
-`;
+REF*0B*12-3456789~`,
+
+      834: `ISA*00*          *00*          *ZZ*EMPLOYERCO    *ZZ*INSURER       *240701*1200*^*00501*000024500*0*P*:~
+ST*834*0001~
+BGN*00*REF001234*981201**1200**2~
+N1*P5*ACME CORP*FI*123456789~
+N2*ACME CORPORATION HUMAN RESOURCES~
+N3*100 MAIN STREET~
+N4*CHICAGO*IL*60601000~
+PER*IP*BENEFITS HELP LINE*TE*8005550100~
+HD*021**HLT**MEDICAL PPO PLAN*My Health Plan PPO~
+DTP*348*D8*20240101~
+DTP*349*D8*20241231~
+DTP*353*D8*20240101~
+INS*Y*18*18*A****E*******A**F**OT**G8~
+NM1*IL*1*DOE*JOHN*Q***MR*EMP001234567~
+DMG*D8*19850315*M~
+REF*0F*123456789~
+REF*1L*MEM000123456~
+REF*23*GRP0054321~
+N3*200 OAK AVENUE~
+N4*CHICAGO*IL*60601~
+PER*HP*JOHN DOE*TE*3125559876~
+MPI*A*1234567890**A~
+INS*N*02*19*A****F*******X**M**~
+NM1*IL*1*DOE*JANE*MARIE*~INS*N*02*29*A****F*******X**M**~
+NM1*IL*1*DOE*BOBBY*JAMES~`
+    };
 
     function parse() {
       const raw = document.getElementById('ediInput').value;
+      const fmt = document.getElementById('formatSelect').value;
       if (!raw.trim()) return;
 
       const formData = new FormData();
       formData.append('edi', raw);
+      formData.append('format', fmt);
 
       fetch('/parse', { method: 'POST', body: formData })
         .then(r => r.json())
@@ -396,80 +441,88 @@ REF*0B*12-3456789~
     }
 
     function loadSample() {
-      document.getElementById('ediInput').value = SAMPLE.trim();
+      const fmt = document.getElementById('formatSelect').value;
+      document.getElementById('ediInput').value = SAMPLES[fmt].trim();
     }
 
     function clearInput() {
       document.getElementById('ediInput').value = '';
-      document.getElementById('result').innerHTML = '<div class="empty-state"><span class="icon">📋</span><p>Parsed output will appear here</p></div>';
+      document.getElementById('result').innerHTML =
+        '<div class="empty-state"><span class="icon">📋</span><p>Parsed output will appear here</p></div>';
     }
 
+    // ─── Render ───────────────────────────────────────────────────────────────
     function render(d) {
+      const fmt = d._format || '278';
       let html = '';
 
-      // ── Transaction Info ─────────────────────────────────────────────────
-      const ti = d.transaction_info || {};
-      const tiRows = [
-        ['Transaction Set ID', ti.transaction_set_id],
-        ['Transaction Set Code', ti.transaction_set_code],
-        ['Purpose', ti.transaction_set_purpose_code],
-        ['Reference ID', ti.transaction_ref_id],
-        ['Date', ti.transaction_date ? formatDate(ti.transaction_date) : null],
-        ['Time', ti.transaction_time],
-        ['Type', ti.transaction_type],
-      ].filter(r => r[1]);
+      if (fmt === '278') html = render278(d);
+      else if (fmt === '834') html = render834(d);
+      else html = render278(d); // fallback
 
-      if (tiRows.length) {
-        html += card('Transaction Info', 'info', rows(tiRows));
-      }
+      document.getElementById('result').innerHTML = html ||
+        '<div class="empty-state"><span class="icon">⚠</span><p>No recognizable data found.</p></div>';
+    }
 
-      // ── Requestor ────────────────────────────────────────────────────────
+    // ─── Render EDI 278 ──────────────────────────────────────────────────────
+    function render278(d) {
+      let html = '';
+      const ti  = d.transaction_info || {};
       const req = d.requestor || {};
-      const reqRows = [
-        ['Entity', req.entity_type],
-        ['Last Name', req.name_last],
-        ['First Name', req.name_first],
-        ['Contact', req.contact_name],
-        ['Phone(s)', req.contact_phones ? req.contact_phones.join(', ') : null],
-        ['Tax ID', req.tax_id],
-        ['ID Code', req.id_code],
-      ].filter(r => r[1]);
+      const sub = d.subscriber || {};
+      const pat = d.patient || {};
+      const pay = d.payer || {};
+      const auth = d.authorization || {};
+
+      const tiRows = filter([
+        ['Transaction Set ID',   ti.transaction_set_id],
+        ['Transaction Set Code', ti.transaction_set_code],
+        ['Purpose',             ti.transaction_set_purpose_code],
+        ['Reference ID',         ti.transaction_ref_id],
+        ['Date',                formatDate(ti.transaction_date)],
+        ['Time',                ti.transaction_time],
+        ['Type',                ti.transaction_type],
+      ]);
+      if (tiRows.length) html += card('Transaction Info', 'info', rows(tiRows));
+
+      const reqRows = filter([
+        ['Entity',          req.entity_type],
+        ['Last Name',       req.name_last],
+        ['First Name',      req.name_first],
+        ['Contact',         req.contact_name],
+        ['Phone(s)',        (req.contact_phones || []).join(', ')],
+        ['Tax ID',          req.tax_id],
+        ['ID Code',         req.id_code],
+      ]);
       if (reqRows.length) html += card('Requestor', 'person', rows(reqRows));
 
-      // ── Subscriber ───────────────────────────────────────────────────────
-      const sub = d.subscriber || {};
-      const subRows = [
-        ['Entity', sub.entity_type],
-        ['Relationship', sub.relationship],
-        ['Benefit Status', sub.benefit_status],
-        ['Member ID', sub.member_id],
-        ['Last Name', sub.name_last],
-        ['First Name', sub.name_first],
-        ['ID Code', sub.id_code],
-      ].filter(r => r[1]);
+      const subRows = filter([
+        ['Entity',          sub.entity_type],
+        ['Relationship',    sub.relationship],
+        ['Benefit Status',  sub.benefit_status],
+        ['Member ID',       sub.member_id],
+        ['Last Name',       sub.name_last],
+        ['First Name',      sub.name_first],
+        ['ID Code',         sub.id_code],
+      ]);
       if (subRows.length) html += card('Subscriber', 'person', rows(subRows));
 
-      // ── Patient ─────────────────────────────────────────────────────────
-      const pat = d.patient || {};
-      const patRows = [
-        ['Entity', pat.entity_type],
-        ['Last Name', pat.name_last],
-        ['First Name', pat.name_first],
-        ['ID Code', pat.id_code],
-      ].filter(r => r[1]);
+      const patRows = filter([
+        ['Entity',          pat.entity_type],
+        ['Last Name',       pat.name_last],
+        ['First Name',      pat.name_first],
+        ['ID Code',         pat.id_code],
+      ]);
       if (patRows.length) html += card('Patient', 'person', rows(patRows));
 
-      // ── Payer ────────────────────────────────────────────────────────────
-      const pay = d.payer || {};
-      const payRows = [
-        ['Entity', pay.entity_type],
-        ['Last Name', pay.name_last],
-        ['First Name', pay.name_first],
-        ['ID Code', pay.id_code],
-      ].filter(r => r[1]);
+      const payRows = filter([
+        ['Entity',          pay.entity_type],
+        ['Last Name',       pay.name_last],
+        ['First Name',      pay.name_first],
+        ['ID Code',         pay.id_code],
+      ]);
       if (payRows.length) html += card('Payer', 'doc', rows(payRows));
 
-      // ── Diagnosis Codes ─────────────────────────────────────────────────
       if (d.diagnosis_codes && d.diagnosis_codes.length) {
         const items = d.diagnosis_codes.map(dx =>
           `<div class="code-item"><span class="code-type">${esc(dx.code_type || 'Diagnosis')}</span><span class="code-value">${esc(dx.code)}</span></div>`
@@ -477,37 +530,34 @@ REF*0B*12-3456789~
         html += card('Diagnosis Codes', 'pill', `<div class="code-list">${items}</div>`);
       }
 
-      // ── Services / Procedures ──────────────────────────────────────────
       if (d.services && d.services.length) {
         const items = d.services.map(svc => {
-          let meta = [];
-          if (svc.modifier)        meta.push(`Modifier: ${esc(svc.modifier)}`);
-          if (svc.units)          meta.push(`Units: ${esc(svc.units)}`);
-          if (svc.service_amount) meta.push(`Amount: $${esc(svc.service_amount)}`);
-          if (svc.line_item_ref)   meta.push(`Line Ref: ${esc(svc.line_item_ref)}`);
+          const meta = filter([
+            ['Modifier',       svc.modifier],
+            ['Units',          svc.units],
+            ['Amount',         svc.service_amount ? '$' + svc.service_amount : null],
+            ['Line Ref',       svc.line_item_ref],
+          ]);
           return `<div class="service-row">
             <span class="service-code">${esc(svc.procedure_code || '—')}</span>
-            <span class="service-meta">${meta.join(' · ') || 'No additional info'}</span>
+            <span class="service-meta">${meta.map(([l,v]) => `${esc(l)}: ${esc(v)}`).join(' · ')}</span>
           </div>`;
         }).join('');
         html += card('Services & Procedures', 'doc', items);
       }
 
-      // ── Authorization Decision ───────────────────────────────────────────
-      const auth = d.authorization || {};
       if (auth.decision_code) {
-        const tagCls = { A: 'tag-success', D: 'tag-danger', P: 'tag-warning', R: 'tag-danger', S: 'tag-warning', C: 'tag-warning' }[auth.decision_code] || 'tag-info';
-        const iconCls = { A: 'icon-check', D: 'icon-question', P: 'icon-alert', R: 'icon-question', S: 'icon-alert' }[auth.decision_code] || 'icon-info';
-        const authItems = [
-          ['Status', `<span class="tag ${tagCls}">${esc(auth.decision || auth.decision_code)}</span>`],
-          ['Timing', auth.timing],
+        const tagCls = { A:'tag-success', D:'tag-danger', P:'tag-warning', R:'tag-danger', S:'tag-warning', C:'tag-warning' }[auth.decision_code] || 'tag-info';
+        const iconCls = { A:'icon-check', D:'icon-question', P:'icon-alert', R:'icon-question', S:'icon-alert' }[auth.decision_code] || 'icon-info';
+        const authItems = filter([
+          ['Status',  `<span class="tag ${tagCls}">${esc(auth.decision || auth.decision_code)}</span>`],
+          ['Timing',  auth.timing],
           ['Outcome', auth.outcome],
-          ['Reason', auth.reason],
-        ].filter(r => r[1]);
+          ['Reason',  auth.reason],
+        ]);
         html += card('Authorization Decision', iconCls, rows(authItems));
       }
 
-      // ── Notes ───────────────────────────────────────────────────────────
       if (d.notes && d.notes.length) {
         const items = d.notes.map(n =>
           `<div class="note-item"><div class="note-type">${esc(n.type || 'Note')}</div>${esc(n.text)}</div>`
@@ -515,38 +565,161 @@ REF*0B*12-3456789~
         html += card('Notes', 'alert', items);
       }
 
-      // ── References ───────────────────────────────────────────────────────
       if (d.references && d.references.length) {
         const rows_data = d.references.map(r => [esc(r.qualifier || '—'), esc(r.value || '—')]);
-        html += card('References', 'info', rows([['Qualifier', 'Value']].concat(rows_data)));
+        html += card('References', 'info', rows([['Qualifier','Value']].concat(rows_data)));
       }
 
-      // ── Raw Segments ─────────────────────────────────────────────────────
-      if (d.raw_segments && d.raw_segments.length) {
-        const rawRows = d.raw_segments.map(seg =>
-          `<div class="segment-row"><span class="segment-id">${esc(seg.segment_id)}</span><span class="segment-content">${seg.elements.map(e => esc(e)).join(' * ')}</span></div>`
-        ).join('');
-        html += `<div class="section-card">
-          <div class="section-header">
-            <div class="section-icon icon-info">📄</div>
-            <span class="section-title">Raw Segments</span>
-          </div>
-          <div class="card-body">
-            <button class="btn-secondary toggle-raw" onclick="document.getElementById('rawSegs').classList.toggle('visible')">Toggle Raw</button>
-            <div class="raw-segments" id="rawSegs">${rawRows}</div>
-          </div>
-        </div>`;
-      }
+      html += renderRawSegments(d.raw_segments);
 
-      document.getElementById('result').innerHTML = html || '<div class="empty-state"><span class="icon">⚠</span><p>No recognizable EDI 278 data found.</p></div>';
+      return html;
     }
 
-    function card(title, icon, content) {
-      const icons = { info:'ℹ', person:'👤', doc:'📄', alert:'⚠', pill:'💊', check:'✓', question:'❓' };
+    // ─── Render EDI 834 ──────────────────────────────────────────────────────
+    function render834(d) {
+      let html = '';
+      const ti  = d.transaction_info || {};
+      const sp  = d.sponsor || {};
+      const pl  = d.plan || {};
+      const sub = d.subscriber || {};
+
+      // Transaction Info
+      const tiRows = filter([
+        ['Transaction Set ID',    ti.transaction_set_id],
+        ['Transaction Set Code',  ti.transaction_set_code],
+        ['Implementation Ref',    ti.implementation_ref],
+        ['Group Control Num',     ti.group_control_num],
+        ['Reference ID',         ti.reference_id],
+        ['Transaction Type',     ti.transaction_type_code],
+        ['Date',                 formatDate(ti.date)],
+        ['Time',                 ti.time],
+        ['Action Code',          ti.action_code],
+      ]);
+      if (tiRows.length) html += card('Transaction Info <span class="fmt-badge fmt-834">834</span>', 'info', rows(tiRows), true);
+
+      // Sponsor / Employer / Insurer
+      const spRows = filter([
+        ['Sponsor Name',         sp.name],
+        ['Additional Name',      sp.name_2],
+        ['Sponsor ID',           sp.id_code],
+        ['Sponsor ID Qual',      sp.id_code_qual],
+        ['Insurer Name',         sp.insurer_name],
+        ['Insurer ID',           sp.insurer_id],
+        ['TPA Name',             sp.tpa_name],
+        ['Address',              [sp.address && sp.address.address_line_1, sp.address && sp.address.city, sp.address && sp.address.state].filter(Boolean).join(', ')],
+        ['City/State/Zip',       sp.address ? [sp.address.city, sp.address.state, sp.address.zip].filter(Boolean).join(' ') : null],
+        ['Contact',              sp.contact && sp.contact.contact_name],
+        ['Phone',                sp.contact && (sp.contact.phone_1 || sp.contact.phone_2)],
+      ]);
+      if (spRows.length) html += card('Plan Sponsor / Employer', 'plan', rows(spRows));
+
+      // Plan Details
+      const plRows = filter([
+        ['Maintenance Type',     pl.maintenance_type],
+        ['Coverage Status',      statusTag(pl.coverage_status)],
+        ['Insurance Line',      pl.insurance_line],
+        ['Line Code',            pl.insurance_line_code],
+        ['Plan Description',     pl.plan_coverage_desc],
+      ]);
+      if (plRows.length) html += card('Plan', 'plan', rows(plRows));
+
+      // Subscriber
+      const subRows = filter([
+        ['Member ID',            sub.member_id],
+        ['SSN / Tax ID',         sub.ssn || sub.ref_0F],
+        ['Group Number',         sub.ref_23 || sub.ref_CT],
+        ['Relationship',         sub.relationship],
+        ['Benefit Status',       statusTag(sub.benefit_status)],
+        ['Employment Status',    sub.employment_status],
+        ['COBRA',                sub.cob],
+        ['Medicare Status',      sub.medicare_status || (sub.ref_mpi ? 'MPI: ' + sub.ref_mpi : null)],
+        ['Medicare Number',      sub.medicare_number],
+        ['Last Name',            sub.name_last],
+        ['First Name',           sub.name_first],
+        ['Middle Name',          sub.name_middle],
+        ['Date of Birth',        sub.birth_date],
+        ['Gender',               sub.gender],
+        ['Race',                 sub.race],
+        ['Address',              sub.address_line_1 || sub.address_line_2],
+        ['City/State',           sub.city && sub.state ? `${sub.city}, ${sub.state}` : null],
+        ['Zip',                  sub.zip],
+        ['Phone',                sub.phone_1 || sub.phone_2],
+        ['Date of Death',        sub.date_of_death],
+      ]);
+      if (subRows.length) html += card('Subscriber <span class="fmt-badge fmt-834">Member</span>', 'person', rows(subRows), true);
+
+      // Dependents
+      if (d.dependents && d.dependents.length) {
+        const items = d.dependents.map(dep => {
+          const depRows = filter([
+            ['Member ID',    dep.member_id || dep.ref_1L],
+            ['Relationship', dep.relationship],
+            ['Benefit Status', statusTag(dep.benefit_status)],
+            ['Employment Status', dep.employment_status],
+            ['Last Name',    dep.name_last],
+            ['First Name',   dep.name_first],
+            ['Middle Name',  dep.name_middle],
+            ['Date of Birth', dep.birth_date],
+            ['Gender',       dep.gender],
+            ['Medicare Status', dep.medicare_status],
+          ]);
+          return `<div class="dep-item">${rows(depRows)}</div>`;
+        }).join('');
+        html += card('Dependents', 'person', items);
+      }
+
+      // Coverage Dates
+      if (d.coverage_dates && d.coverage_dates.length) {
+        const items = d.coverage_dates.map(cd =>
+          `<div class="date-item"><span class="date-qual">${esc(cd.qualifier || 'Date')}</span><span class="date-val">${esc(cd.date || '—')}</span></div>`
+        ).join('');
+        html += card('Coverage Dates', 'info', `<div class="date-list">${items}</div>`);
+      }
+
+      // References
+      if (d.references && d.references.length) {
+        const rows_data = d.references.map(r => [esc(r.qualifier || '—'), esc(r.value || '—'), esc(r.description || '')]);
+        html += card('References', 'info', rows([['Qualifier','Value','Description']].concat(rows_data)));
+      }
+
+      // Notes
+      if (d.notes && d.notes.length) {
+        const items = d.notes.map(n =>
+          `<div class="note-item"><div class="note-type">${esc(n.type || 'Note')}</div>${esc(n.text)}</div>`
+        ).join('');
+        html += card('Notes', 'alert', items);
+      }
+
+      html += renderRawSegments(d.raw_segments);
+
+      return html;
+    }
+
+    function renderRawSegments(raw_segments) {
+      if (!raw_segments || !raw_segments.length) return '';
+      const rawRows = raw_segments.map(seg =>
+        `<div class="segment-row"><span class="segment-id">${esc(seg.segment_id)}</span><span class="segment-content">${(seg.elements || []).map(e => esc(e)).join(' * ')}</span></div>`
+      ).join('');
+      return `<div class="section-card">
+        <div class="section-header">
+          <div class="section-icon icon-info">📄</div>
+          <span class="section-title">Raw Segments</span>
+        </div>
+        <div class="card-body">
+          <button class="btn-secondary toggle-raw" onclick="document.getElementById('rawSegs').classList.toggle('visible')">Toggle Raw</button>
+          <div class="raw-segments" id="rawSegs">${rawRows}</div>
+        </div>
+      </div>`;
+    }
+
+    // ─── Helpers ──────────────────────────────────────────────────────────────
+    function card(title, icon, content, allowHtmlTitle) {
+      const icons = { info:'ℹ', person:'👤', doc:'📄', alert:'⚠', pill:'💊', check:'✓', question:'❓', plan:'📋' };
+      const safeTitle = allowHtmlTitle ? title : esc(title);
       return `<div class="section-card">
         <div class="section-header">
           <div class="section-icon icon-${icon}">${icons[icon] || '•'}</div>
-          <span class="section-title">${title}</span>
+          <span class="section-title">${safeTitle}</span>
         </div>
         <div class="card-body">${content}</div>
       </div>`;
@@ -554,8 +727,12 @@ REF*0B*12-3456789~
 
     function rows(arr) {
       return arr.map(([label, value]) =>
-        `<div class="data-row"><span class="data-label">${label}</span><span class="data-value">${value}</span></div>`
+        `<div class="data-row"><span class="data-label">${label}</span><span class="data-value">${value !== null && value !== undefined ? value : '—'}</span></div>`
       ).join('');
+    }
+
+    function filter(arr) {
+      return arr.filter(([, v]) => v !== null && v !== undefined && v !== '');
     }
 
     function esc(str) {
@@ -567,7 +744,13 @@ REF*0B*12-3456789~
 
     function formatDate(ds) {
       if (!ds || ds.length !== 8) return ds || '';
-      return `${ds.slice(4,6)}/${ds.slice(6,8)}/${ds.slice(0,4)}`;
+      return `${ds[4:6]}/${ds[6:8]}/${ds[0:4]}`;
+    }
+
+    function statusTag(v) {
+      if (!v) return null;
+      const cls = { Active:'tag-success', Terminated:'tag-danger', Suspended:'tag-warning', Expired:'tag-danger', 'Not Covered':'tag-danger' }[v] || 'tag-info';
+      return `<span class="tag ${cls}">${esc(v)}</span>`;
     }
 
     function showError(msg) {
